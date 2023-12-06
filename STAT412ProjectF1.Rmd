@@ -1,0 +1,483 @@
+title: "STAT412ProjectF1"
+---
+author: "Alper Tunahan Öztürk"
+date: '2022-06-04'
+output: html_document
+---
+
+```{r Libraries, message=FALSE, warning=FALSE, include=FALSE}
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr')
+if (!require('naniar')) install.packages('naniar'); library('naniar')
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('lubridate')) install.packages('lubridate'); library('lubridate')
+if (!require('vtable')) install.packages('vtable'); library('vtable')
+if (!require('skimr')) install.packages('skimr'); library('skimr')
+if (!require('esquisse')) install.packages('esquisse'); library('esquisse')
+if (!require('corrplot')) install.packages('corrplot'); library('corrplot')
+if (!require('factoextra')) install.packages('factoextra'); library('factoextra')
+if (!require('mice')) install.packages('mice'); library('mice')
+if (!require('broom')) install.packages('broom'); library('broom')
+if (!require('MASS')) install.packages('MASS'); library('MASS')
+if (!require('caret')) install.packages('caret'); library('caret')
+if (!require('InformationValue')) install.packages('InformationValue'); library('InformationValue')
+if (!require('tableone')) install.packages('tableone'); library('tableone')
+if (!require('SmartEDA')) install.packages('SmartEDA'); library('SmartEDA')
+if (!require('caTools')) install.packages('caTools'); library('caTools')
+if (!require('randomForest')) install.packages('randomForest'); library('randomForest')
+if (!require('neuralnet')) install.packages('neuralnet'); library('neuralnet')
+if (!require('e1071')) install.packages('e1071'); library('e1071')
+```
+
+```{r}
+constructor_df = read.csv('constructors.csv')
+driver_standings_df = read.csv('driver_standings.csv')
+drivers_df = read.csv('drivers.csv')
+laptimes_df = read.csv('lap_times.csv')
+pitstop_df = read.csv('pit_stops.csv')
+races_df = read.csv('races.csv')
+result_df = read.csv('results.csv')
+stats_df = read.csv('status.csv')
+circuits_df = read.csv('circuits.csv')
+```
+
+```{r}
+head(result_df)
+head(stats_df)
+head(drivers_df)
+head(races_df)
+head(constructor_df)
+head(driver_standings_df)
+```  
+
+## Taking races from 2010 to end of the 2021.  
+```{r}
+races_df_last <- races_df %>% filter(year > 2010, raceId < 1081)
+races_df_last <- races_df_last[,-c(9:18)]
+summary(races_df_last$year)
+summary(races_df_last$raceId)
+#unique(races_df_last$raceId)
+
+result_df_last <- result_df %>% filter(raceId %in% unique(races_df_last$raceId))
+#sort(unique(result_df_last$raceId)) == sort(unique(races_df_last$raceId))
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+kast = data.frame()
+
+for (i in unique(races_df_last$raceId)){
+  # print(i)
+  m <- pitstop_df %>% filter(raceId == as.integer(i)) %>% group_by(driverId, raceId) %>% summarise(pitduration = sum(as.numeric(duration), na.rm = T))
+  
+  kast = rbind(kast, m)
+  }
+
+```
+
+
+```{r}
+df <- left_join(result_df_last, kast, by = c("raceId", "driverId"))
+
+#con1 <- right_join(result_df_last, races_df_last, by = "raceId")
+#con2 <- right_join(con1, drivers_df, by = "driverId")
+#con3 <- driver_standings_df %>% select(wins, driverId, raceId)
+#a <- df %>% filter(year == 2021)
+#con3 <- right_join(con2, con3, by = "raceId")
+#con4 <- right_join(con3, constructor_df, by = "constructorId")
+#df <- right_join(con4, stats_df, by = "statusId")
+```
+
+## Droping unwanted columns  
+
+```{r}
+summary(df)
+colnames(df)
+```
+## Removing unwanted columns
+```{r}
+df <- subset(df, select = -c(raceId, resultId, driverId, constructorId, number, positionText, positionOrder))
+unique(df$position)
+df$position <- ifelse(df$position == "\\N", 0 , df$position)
+unique(df$position)
+```
+
+
+## Converting the data types  
+
+```{r warning=FALSE}
+colnames(df)
+df$points <- as.numeric(df$points)
+df$points <- ifelse(df$points == 0, 0, 1)
+df$points <- as.factor(df$points)
+
+df$time <- as.numeric(df$time)
+df$fastestLap <- as.numeric(df$fastestLap)
+df$rank <- as.factor(df$rank)
+df$fastestLapSpeed <- as.numeric(df$fastestLapSpeed)
+df$milliseconds <- as.numeric(df$milliseconds)
+df$position <- as.factor(df$position)
+#df$positionText <- as.factor(df$positionText)
+#df$positionOrder <- as.factor(df$positionOrder)
+df$grid <- as.factor(df$grid)
+df$fastestLapTime <- period_to_seconds(ms(df$fastestLapTime))
+```
+
+```{r}
+sumtable(df[,-c(2,3,4,5,6,11)], add.median = T)
+
+skim(df)
+
+```
+
+
+```{r}
+summary(df)
+lapply(df, class)
+sum(is.na(df))
+gg_miss_upset(df)
+n_var_miss(df)
+gg_miss_upset(df, nsets = n_var_miss(df))
+```
+
+
+```{r}
+gg_miss_var(df)
+gg_miss_var(df, show_pct = T)
+sum(duplicated(df))
+```
+
+
+```{r}
+ggplot(df, aes(fastestLapTime, grid)) + geom_point()
+
+```
+
+```{r}
+summary(df)
+esquisser(df)
+
+
+
+
+library(ggplot2)
+
+ggplot(df) +
+ aes(x = points) +
+ geom_bar(fill = "#112446") +
+ theme_minimal()
+library(ggplot2)
+
+ggplot(df) +
+ aes(x = fastestLap, y = points) +
+ geom_boxplot(fill = "#112446") +
+ labs(x = "The number of the fastest lap", 
+ y = "Points", title = "Boxplots of The Fastest Lap") +
+ coord_flip() +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = pitduration, y = points) +
+ geom_violin(adjust = 1L, scale = "area", fill = "#112446") +
+ labs(x = "The time spent during pitstops", y = "Points", title = "Boxplots of The Pit Duration") +
+ coord_flip() +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = fastestLapSpeed, y = points) +
+ geom_boxplot(fill = "#1C4FA9") +
+ labs(x = "The Fastest Lap Speed", 
+ y = "Points", title = "Boxplot of the Fastest Lap Speed") +
+ coord_flip() +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = laps, y = grid) +
+ geom_boxplot(fill = "#1C4FA9") +
+ labs(x = "Total Laps", y = "Points") +
+ coord_flip() +
+ theme_minimal() +
+ facet_wrap(vars(points))
+library(ggplot2)
+
+ggplot(df) +
+ aes(x = rank) +
+ geom_bar(fill = "#112446") +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = grid) +
+ geom_bar(fill = "#112446") +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = position) +
+ geom_bar(fill = "#112446") +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = positionText) +
+ geom_bar(fill = "#112446") +
+ theme_minimal()
+library(ggplot2)
+
+ggplot(df) +
+ aes(x = fastestLapSpeed) +
+ geom_density(adjust = 1L, fill = "#FF8C00") +
+ theme_minimal()
+
+ggplot(df) +
+ aes(x = fastestLapTime) +
+ geom_density(adjust = 1L, fill = "#FF8C00") +
+ theme_linedraw()
+library(ggplot2)
+
+ggplot(df) +
+ aes(x = fastestLap) +
+ geom_histogram(bins = 30L, fill = "#FF8C00") +
+ labs(x = "Fastest Lap", 
+ y = "Frequency") +
+ theme_linedraw()
+
+ggplot(df) +
+ aes(x = fastestLapSpeed) +
+ geom_histogram(bins = 30L, fill = "#FF8C00") +
+ labs(x = "Pit Duration Times", 
+ y = "Density") +
+ theme_linedraw()
+
+
+pairs(df[,-c(1,2,3,4,5,8,9,11,14)])
+corrplot(cor(df[,-c(1,2,3,4,5,8,9,11,14)]), method = 'color', order = 'alphabet')
+pairs(cor(df[,-c(1,2,3,4,5,8,9,11,14)]))
+summary(df[,-c(1,2,3,4,5,8,9,11,14)])
+
+lapply(df[,-c(1,2,3,4,5,8,9,11,14)], class)
+```
+
+```{r}
+lapply(df[,-c(1,2,3,4,5,10)], class)
+
+results <- prcomp(na.omit(df[,-c(1,2,3,4,6,7,8,11)]), scale = TRUE)
+which(apply(na.omit(df[,-c(1,2,3,4,6,7,8,11)]), 2, var)==0)
+summary(results)
+results$sdev
+```
+
+
+```{r}
+#reverse the signs
+results$rotation <- -1*results$rotation
+#display principal components
+results$rotation
+```
+
+```{r}
+#reverse the signs of the scores
+results$x <- -1*results$x
+
+#display the first six scores
+head(results$x)
+```
+```{r}
+biplot(results, scale = 0)
+fviz_eig(results,ncp = 8)
+```
+```{r}
+init = mice(df, maxit=0) 
+init
+df <- complete(init)
+colSums(is.na(df))
+
+tk <- t.test(as.numeric(df$points), as.numeric(df$fastestLap), scale =T )
+
+glance(tk)
+broom::tidy(tk)
+shapiro.test(as.numeric(df$points))
+
+t.test(as.numeric(df$points), as.numeric(df$pitduration))
+
+t.test(as.numeric(df$points), as.numeric(df$fastestLapSpeed))
+
+
+chisq.test(df$points, df$grid)
+```
+
+## Modelling
+
+```{r}
+set.seed(123) # setting seed to generate a reproducible random sampling
+# creating training data as 80% of the dataset
+random_sample <- createDataPartition(df$points, p = 0.8, list = FALSE)
+train  <- df[random_sample, ] # generating training dataset from the random_sample
+test <- df[-random_sample, ] # generating testing dataset from rows which are not included in random_sample
+
+
+prop.table(table(train$points))
+summary(df)
+fit.full <- glm(points ~ grid + laps + time + fastestLap  + fastestLapTime + fastestLapSpeed + pitduration + rank, data=df, family="binomial")
+summary(fit.full)
+
+predicted3 <- predict(fit.full, test, type="response")
+head(predicted3) # this is the predicted score. these scores are between 0 and 1
+
+
+optCutOff2 <- optimalCutoff(test$points, predicted3)[1] 
+pred.test2 = ifelse(predicted3 > optCutOff2, 1, 0)
+head(pred.test2)
+
+
+test_tab2 = table(predicted = pred.test2,actual = test$points)
+accuracy2<-(test_tab2[1, 1] + test_tab2[2, 2]) / sum(test_tab2)
+
+
+sensitivity2<-sensitivity(test$points, pred.test2)
+specificity2<-specificity(test$points,pred.test2)
+data.frame(accuracy2,sensitivity2,specificity2)
+```
+# Support Vector Machines  
+```{r}
+classifier = svm(formula = points ~ fastestLapTime + pitduration,
+                 data = train,
+                 type = 'C-classification',
+                 kernel = 'linear')
+summary(classifier)
+
+
+y_pred = predict(classifier, newdata = test[,-3])
+cm = table(test[, 3], y_pred)
+
+sens = 342 / (342+272)
+spec = 178 / (178 + 160)
+acc = (342 + 178) / (342 + 160 +272 + 178)
+
+```
+
+# Artificial Neural Networks  
+
+```{r}
+trainnn <- lapply(train, function(x) as.numeric(as.character(x)))
+trainnn <- as.data.frame(trainnn)
+testnn <- lapply(test, function(x) as.numeric(as.character(x)))
+testnn <- as.data.frame(testnn)
+nn=neuralnet(points~fastestLapTime + pitduration, data=trainnn, 
+             hidden=3,act.fct = "logistic",
+             linear.output = FALSE)
+plot(nn)
+
+
+predict <- compute(nn, testnn)
+probab <- predict$net.result
+
+#converting probabilities into 1 and 0
+
+pre <- ifelse(probab>0.5, 1, 0)
+
+pre
+
+test_tab3 = table(predicted = pre, actual = testnn$points)
+accuracy3<-(test_tab3[1, 1] + test_tab3[2, 2]) / sum(test_tab2)
+
+sensitivity3<-sensitivity(y_test, as.numeric(pred_y))
+specificity3<-specificity(y_test, as.numeric(pred_y))
+data.frame(accuracy3,sensitivity3,specificity3)
+```
+
+
+
+# Random Forest  
+
+```{r}
+df
+str(train)
+str(test)
+
+rf1 <- randomForest(points~., data = train)
+rf1
+plot(rf1)
+
+pred_test = predict(rf1, test)
+
+pred_test
+
+test_tab3 = table(predicted = pred_test,actual = test[,3])
+accuracy3<-(test_tab3[1, 1] + test_tab3[2, 2]) / sum(test_tab3)
+
+sensitivity3<-sensitivity(test, as.numeric(pred_y))
+specificity3<-specificity(test, as.numeric(pred_y))
+data.frame(accuracy3,sensitivity3,specificity3)
+
+
+```
+
+
+# XgBoost  
+```{r}
+X_train = data.matrix(train[,-3])                  # independent variables for train
+y_train = train[,3]                                # dependent variables for train
+  
+X_test = data.matrix(test[,-3])                    # independent variables for test
+y_test = test[,3]                                   # dependent variables for test
+
+
+# convert the train and test data into xgboost matrix type.
+xgboost_train = xgb.DMatrix(data=X_train, label=y_train)
+xgboost_test = xgb.DMatrix(data=X_test, label=y_test)
+
+```
+
+```{r}
+xg <- xgboost(data = xgboost_train,
+              max.depth = 3,
+              nrounds = 50)
+
+summary(xg)
+```
+
+```{r}
+#use model to make predictions on test data
+pred_test = predict(xg, xgboost_test)
+
+pred_test
+```
+
+```{r}
+pred_test[(pred_test>3)] = 3
+pred_y = as.factor((levels(y_test))[round(pred_test)])
+print(pred_y)
+```
+
+```{r}
+conf_mat = confusionMatrix(y_test, as.numeric(pred_y))
+print(conf_mat)
+
+
+test_tab3 = table(predicted = pred_y,actual = y_test)
+accuracy3<-(test_tab3[1, 1] + test_tab3[2, 2]) / sum(test_tab2)
+
+sensitivity3<-sensitivity(y_test, as.numeric(pred_y))
+specificity3<-specificity(y_test, as.numeric(pred_y))
+data.frame(accuracy3,sensitivity3,specificity3)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
